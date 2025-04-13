@@ -303,6 +303,7 @@ class CustomAgent(Agent):
     async def step(self, step_info: Optional[CustomAgentStepInfo] = None) -> None:
         """Execute one step of the task"""
         logger.info(f"\n📍 Step {self.state.n_steps}")
+        logger.debug(f"🔍 ENTERING step() - current n_steps: {self.state.n_steps}")
         state = None
         model_output = None
         result: list[ActionResult] = []
@@ -311,48 +312,80 @@ class CustomAgent(Agent):
 
         try:
             state = await self.browser_context.get_state()
+            logger.debug("🌐 Retrieved browser state")
             await self._raise_if_stopped_or_paused()
 
-            self.message_manager.add_state_message(state, self.state.last_action, self.state.last_result, step_info,
-                                                   self.settings.use_vision)
+            logger.debug("💬 Adding state message to message manager")
+            self.message_manager.add_state_message(
+                state, 
+                self.state.last_action, 
+                self.state.last_result, 
+                step_info,
+                self.settings.use_vision
+            )
 
             # Run planner at specified intervals if planner is configured
             if self.settings.planner_llm and self.state.n_steps % self.settings.planner_interval == 0:
+                logger.debug("🎯 Running planner")
                 await self._run_planner()
+                
             input_messages = self.message_manager.get_messages()
             tokens = self._message_manager.state.history.current_tokens
+            logger.debug(f"📊 Current token count: {tokens}")
 
             try:
+                logger.debug("🤖 Getting next action from LLM")
                 model_output = await self.get_next_action(input_messages)
+                logger.debug(f"✨ Received model output with {len(model_output.action)} actions")
+                
                 self.update_step_info(model_output, step_info)
+                logger.debug(f"📝 Updated step info - step number: {step_info.step_number if step_info else 'None'}")
+                
                 self.state.n_steps += 1
+                logger.debug(f"⏭️ Incremented n_steps to: {self.state.n_steps}")
 
                 if self.register_new_step_callback:
+                    logger.debug("📞 Calling register_new_step_callback")
                     await self.register_new_step_callback(state, model_output, self.state.n_steps)
 
                 if self.settings.save_conversation_path:
+                    logger.debug("💾 Saving conversation")
                     target = self.settings.save_conversation_path + f'_{self.state.n_steps}.txt'
-                    save_conversation(input_messages, model_output, target,
-                                      self.settings.save_conversation_path_encoding)
+                    save_conversation(
+                        input_messages, 
+                        model_output, 
+                        target,
+                        self.settings.save_conversation_path_encoding
+                    )
 
                 if self.model_name != "deepseek-reasoner":
-                    # remove prev message
+                    logger.debug("🗑️ Removing previous state message")
                     self.message_manager._remove_state_message_by_index(-1)
+                    
                 await self._raise_if_stopped_or_paused()
+                
             except Exception as e:
+                logger.error(f"❌ Error during model interaction: {str(e)}")
                 # model call failed, remove last state message from history
                 self.message_manager._remove_state_message_by_index(-1)
                 raise e
 
+            logger.debug("🎬 Executing actions")
             result: list[ActionResult] = await self.multi_act(model_output.action)
+            logger.debug(f"✅ Completed {len(result)} actions")
+
             for ret_ in result:
                 if ret_.extracted_content and "Extracted page" in ret_.extracted_content:
+                    logger.debug("📄 Found new extracted content")
                     # record every extracted page
                     if ret_.extracted_content[:100] not in self.state.extracted_content:
                         self.state.extracted_content += ret_.extracted_content
+                        
             self.state.last_result = result
             self.state.last_action = model_output.action
+            
             if len(result) > 0 and result[-1].is_done:
+                logger.debug("🏁 Task completion detected")
                 if not self.state.extracted_content:
                     self.state.extracted_content = step_info.memory
                 result[-1].extracted_content = self.state.extracted_content
@@ -361,7 +394,7 @@ class CustomAgent(Agent):
             self.state.consecutive_failures = 0
 
         except InterruptedError:
-            logger.debug('Agent paused')
+            logger.debug('⏸️ Agent paused')
             self.state.last_result = [
                 ActionResult(
                     error='The agent was paused - now continuing actions might need to be repeated',
@@ -371,11 +404,15 @@ class CustomAgent(Agent):
             return
 
         except Exception as e:
+            logger.error(f"❌ Step error occurred: {str(e)}")
             result = await self._handle_step_error(e)
             self.state.last_result = result
 
         finally:
             step_end_time = time.time()
+            duration = step_end_time - step_start_time
+            logger.debug(f"⏱️ Step duration: {duration:.2f}s")
+            
             actions = [a.model_dump(exclude_unset=True) for a in model_output.action] if model_output else []
             self.telemetry.capture(
                 AgentStepTelemetryEvent(
@@ -386,9 +423,7 @@ class CustomAgent(Agent):
                     step_error=[r.error for r in result if r.error] if result else ['No result'],
                 )
             )
-            if not result:
-                return
-
+            
             if state:
                 metadata = StepMetadata(
                     step_number=self.state.n_steps,
@@ -397,6 +432,8 @@ class CustomAgent(Agent):
                     input_tokens=tokens,
                 )
                 self._make_history_item(model_output, state, result, metadata)
+                
+            logger.debug(f"🔚 EXITING step() - final n_steps: {self.state.n_steps}")
 
     async def run(self, max_steps: int = 100) -> AgentHistoryList:
         """Execute the task with maximum number of steps"""
