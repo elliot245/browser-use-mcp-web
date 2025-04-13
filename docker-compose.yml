@@ -43,6 +43,7 @@ services:
       - VNC_PASSWORD=${VNC_PASSWORD:-vncpassword}
       - CHROME_DEBUGGING_PORT=9222
       - CHROME_DEBUGGING_HOST=localhost
+      - MCP_TRANSPORT=sse
     volumes:
       - /tmp/.X11-unix:/tmp/.X11-unix
     restart: unless-stopped

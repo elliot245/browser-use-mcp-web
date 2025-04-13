@@ -10,13 +10,14 @@ from dotenv import load_dotenv
 load_dotenv()
 
 from browser_use import BrowserConfig
-from browser_use.browser.context import BrowserContextConfig
+from browser_use.browser.context import BrowserContextConfig, BrowserContextWindowSize
 from fastmcp import FastMCP
 from mcp.types import TextContent
 
 from src.agent.custom_agent import CustomAgent
 from src.browser.custom_browser import CustomBrowser
 from src.controller.custom_controller import CustomController
+from src.agent.custom_prompts import CustomSystemPrompt, CustomAgentMessagePrompt
 from src.utils import utils
 from src.utils.agent_state import AgentState
 
@@ -41,7 +42,7 @@ async def _cleanup_browser_resources() -> None:
     try:
         if _global_agent_state:
             try:
-                await _global_agent_state.request_stop()
+                _global_agent_state.request_stop()
             except Exception as stop_error:
                 logger.warning("Error stopping agent state: %s", stop_error)
 
@@ -102,38 +103,57 @@ async def run_browser_agent(task: str, add_infos: str = "") -> str:
         max_actions_per_step = safe_int("MCP_MAX_ACTIONS_PER_STEP", 5)
         tool_call_in_content = safe_bool("MCP_TOOL_CALL_IN_CONTENT", True)
         chrome_path = os.getenv("CHROME_PATH", None)
-        anonymized_telemetry = safe_bool("ANONYMIZED_TELEMETRY", False)
-        logging_level = os.getenv("BROWSER_USE_LOGGING_LEVEL", "info").lower()
-
-        # Prepare logger based on logging level
-        if logging_level == "debug":
-            logger.setLevel(logging.DEBUG)
-        elif logging_level == "info":
-            logger.setLevel(logging.INFO)
+        chrome_cdp = os.getenv("CHROME_CDP", "")
+        headless = safe_bool("MCP_HEADLESS", False)
+        disable_security = safe_bool("MCP_DISABLE_SECURITY", True)
+        window_w = safe_int("MCP_WINDOW_WIDTH", 1280)
+        window_h = safe_int("MCP_WINDOW_HEIGHT", 1100)
+        max_input_tokens = safe_int("MCP_MAX_INPUT_TOKENS", 128000)
+        use_own_browser = safe_bool("MCP_USE_OWN_BROWSER", False)
+        tool_calling_method = os.getenv("MCP_TOOL_CALLING_METHOD", "auto")
+        
+        # Browser configuration setup
+        extra_chromium_args = ["--accept_downloads=True", f"--window-size={window_w},{window_h}"]
+        
+        cdp_url = chrome_cdp
+        if use_own_browser:
+            cdp_url = os.getenv("CHROME_CDP", chrome_cdp)
+            chrome_user_data = os.getenv("CHROME_USER_DATA", None)
+            if chrome_user_data:
+                extra_chromium_args += [f"--user-data-dir={chrome_user_data}"]
 
         # Prepare the LLM
         llm = utils.get_llm_model(
-            provider=model_provider, model_name=model_name, temperature=temperature
+            provider=model_provider, 
+            model_name=model_name, 
+            temperature=temperature,
+            num_ctx=max_input_tokens
         )
 
         # Create or reuse the global browser instance
-        if not _global_browser:
+        if (_global_browser is None) or (cdp_url and cdp_url != ""):
             _global_browser = CustomBrowser(
                 config=BrowserConfig(
-                    headless=False,
-                    disable_security=False,
+                    headless=headless,
+                    disable_security=disable_security,
+                    cdp_url=cdp_url,
                     chrome_instance_path=chrome_path,
-                    extra_chromium_args=[],
-                    wss_url=None,
-                    proxy=None,
+                    extra_chromium_args=extra_chromium_args,
                 )
             )
 
         # Create or reuse the global browser context
-        if not _global_browser_context:
+        if (_global_browser_context is None) or (cdp_url and cdp_url != ""):
             _global_browser_context = await _global_browser.new_context(
                 config=BrowserContextConfig(
-                    trace_path=None, save_recording_path=None, no_viewport=False
+                    trace_path=None, 
+                    save_recording_path=None,
+                    save_downloads_path="./tmp/downloads",
+                    no_viewport=False,
+                    browser_window_size=BrowserContextWindowSize(
+                        width=window_w, 
+                        height=window_h
+                    ),
                 )
             )
 
@@ -147,9 +167,12 @@ async def run_browser_agent(task: str, add_infos: str = "") -> str:
             browser=_global_browser,
             browser_context=_global_browser_context,
             controller=controller,
+            system_prompt_class=CustomSystemPrompt,
+            agent_prompt_class=CustomAgentMessagePrompt,
             max_actions_per_step=max_actions_per_step,
-            tool_call_in_content=tool_call_in_content,
-            agent_state=_global_agent_state,
+            tool_calling_method=tool_calling_method,
+            max_input_tokens=max_input_tokens,
+            generate_gif=False
         )
 
         # Run agent
@@ -162,15 +185,20 @@ async def run_browser_agent(task: str, add_infos: str = "") -> str:
 
     except Exception as e:
         logger.error("run-browser-agent error: %s", str(e))
+        traceback.print_exc()
         raise ValueError(f"run-browser-agent error: {e}\n{traceback.format_exc()}")
 
     finally:
-        await _cleanup_browser_resources()
+        # If we want to keep browser open between runs, don't clean up
+        keep_browser_open = safe_bool("MCP_KEEP_BROWSER_OPEN", False)
+        if not keep_browser_open:
+            await _cleanup_browser_resources()
 
 
 def main() -> None:
     try:
-        app.run(transport='sse')
+        transport_type = os.getenv("MCP_TRANSPORT", "stdio")
+        app.run(transport=transport_type)
     except Exception as e:
         logger.error("Error running MCP server: %s\n%s", e, traceback.format_exc())
     finally:

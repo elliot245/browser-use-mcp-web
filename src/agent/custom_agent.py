@@ -442,7 +442,7 @@ class CustomAgent(Agent):
                     await self.log_completion()
                     break
             else:
-                logger.info("❌ Failed to complete task in maximum steps")
+                logger.info(f"❌ Failed to complete task in maximum steps: {max_steps}")
                 if not self.state.extracted_content:
                     self.state.history.history[-1].result[-1].extracted_content = step_info.memory
                 else:

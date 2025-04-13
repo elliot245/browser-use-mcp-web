@@ -33,12 +33,12 @@ build:
 # Run the project
 dev:
 	@echo "Dev the project..."
-	uv run fastmcp dev ./src/mcp_browser_use/server.py
+	uv run fastmcp dev ./mcp_sse.py
 
 # Run the project
 run:
 	@echo "Running the project..."
-	uv run mcp-browser-use
+	uv run python ./mcp_sse.py
 
 # Build the Docker image
 docker-build:
