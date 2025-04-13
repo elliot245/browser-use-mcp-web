@@ -6,6 +6,9 @@ import traceback
 import logging
 from typing import Optional
 
+from dotenv import load_dotenv
+load_dotenv()
+
 from browser_use import BrowserConfig
 from browser_use.browser.context import BrowserContextConfig
 from fastmcp import FastMCP
