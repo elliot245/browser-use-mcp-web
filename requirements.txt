@@ -5,3 +5,5 @@ json-repair
 langchain-mistralai==0.2.4
 langchain-google-genai==2.0.8
 MainContentExtractor==0.0.4
+fastapi>=0.115.6
+fastmcp>=0.4.1

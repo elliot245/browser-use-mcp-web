@@ -1,5 +1,5 @@
 services:
-  browser-use-webui:
+  browser-use-mcp-web:
     platform: linux/amd64
     build:
       context: .
@@ -11,6 +11,7 @@ services:
       - "6080:6080"  # noVNC web interface
       - "5901:5901"  # VNC port
       - "9222:9222"  # Chrome remote debugging port
+      - "8000:8000"
     environment:
       - OPENAI_ENDPOINT=${OPENAI_ENDPOINT:-https://api.openai.com/v1}
       - OPENAI_API_KEY=${OPENAI_API_KEY:-}

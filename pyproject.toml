@@ -1,0 +1,17 @@
+[project]
+name = "browser-use-mcp-web"
+version = "0.1.0"
+description = "Add your description here"
+readme = "README.md"
+requires-python = ">=3.13"
+dependencies = [
+    "browser-use==0.1.40",
+    "pyperclip==1.9.0",
+    "gradio==5.23.1",
+    "json-repair",
+    "langchain-mistralai==0.2.4",
+    "langchain-google-genai==2.0.8",
+    "MainContentExtractor==0.0.4",
+    "fastapi>=0.115.6",
+    "fastmcp>=0.4.1"
+]
